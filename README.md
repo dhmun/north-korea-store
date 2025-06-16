@@ -1,2 +1,2 @@
 # north-korea-store
-North Korea Store date from NK smartphone
+North Korea Store data from NK smartphone
