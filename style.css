@@ -1,43 +1,53 @@
 
-:root {
-    --apple-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    --background-color: #f5f5f7;
-    --content-background-color: #ffffff;
-    --text-color-primary: #1d1d1f;
-    --text-color-secondary: #6e6e73;
-    --link-color: #007aff;
-    --border-color: #d2d2d7;
-    --card-border-color: #e5e5e5;
-}
-body { margin: 0; background-color: var(--background-color); font-family: var(--apple-font); }
-.content-wrapper { max-width: 980px; margin: 40px auto; padding: 40px; background-color: var(--content-background-color); border-radius: 18px; text-align: center; }
-h1 { color: var(--text-color-primary); font-weight: 600; font-size: 48px; margin-bottom: 16px; letter-spacing: -0.005em; }
-.apple-gradient-text { background: linear-gradient(125deg, #FF2D55, #FF9F0A, #30D158, #0A84FF, #5E5CE6); -webkit-background-clip: text; background-clip: text; color: transparent; }
-p.subtitle { color: var(--text-color-secondary); font-size: 18px; max-width: 680px; margin: 0 auto 30px auto; line-height: 1.5; }
-.controls-wrapper { margin-bottom: 25px; display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; }
-#search-input { padding: 10px 16px; font-size: 16px; border: 1px solid var(--border-color); border-radius: 20px; min-width: 280px; font-family: var(--apple-font); }
-#search-input:focus { outline: none; border-color: var(--link-color); box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3); }
-.control-button { padding: 10px 22px; font-size: 16px; cursor: pointer; border-radius: 20px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.1s ease-out; border: 1px solid transparent; }
-.control-button:active { transform: scale(0.96); }
-#search-button { background-color: var(--link-color); color: white; border-color: var(--link-color); }
-#up-button, #reset-button { background-color: #f5f5f7; color: var(--link-color); border-color: var(--border-color); }
-#up-button:disabled { cursor: not-allowed; opacity: 0.5; }
-#reset-button { display: none; }
-#treemap-title { font-size: 24px; font-weight: 600; color: var(--text-color-primary); margin-top: 40px; margin-bottom: 15px; min-height: 29px; }
-#treemap-container svg { border-radius: 18px; width: 100%; height: auto; display: block; }
-.node-rect { stroke-width: 0px; }
-.node-label { fill: rgba(255,255,255,0.98); font-weight: 500; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.25); }
-#search-results-container { display: none; margin-top: 40px; padding-top: 30px; text-align: left; border-top: 1px solid var(--card-border-color); }
-#results-count { text-align: center; font-size: 18px; color: var(--text-color-secondary); margin-bottom: 25px; }
-#results-list { display: grid; gap: 20px; }
-.result-card { border: 1px solid var(--card-border-color); border-radius: 12px; padding: 20px; background-color: #fafafa; transition: box-shadow 0.2s ease-in-out; }
-.result-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-.card-location { font-size: 14px; color: var(--text-color-secondary); margin: 0 0 4px 0; }
-.card-store-name { font-size: 18px; font-weight: 600; color: var(--text-color-primary); margin: 0 0 12px 0; }
-.card-description { font-size: 15px; color: var(--text-color-secondary); line-height: 1.6; margin: 0; white-space: pre-wrap; }
-.no-results { text-align: center; padding: 40px 20px; color: var(--text-color-secondary); }
-.modal { display: none; position: fixed; z-index: 10001; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: fadeIn 0.4s; }
-.modal[aria-hidden="false"] { display: block; }
-.modal-content { background-color: rgba(255,255,255,0.9); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); margin: 15% auto; padding: 30px; border: none; width: 90%; max-width: 550px; position: relative; border-radius: 18px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
-.close-button { color: #888; position: absolute; top: 15px; right: 25px; font-size: 28px; font-weight: bold; cursor: pointer; }
-@keyframes fadeIn { from {opacity: 0} to {opacity: 1} }
+    :root {
+        --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        --bg-color: #f8f9fa; --content-bg: #ffffff; --text-primary: #212529; --text-secondary: #868e96;
+        --border-color: #dee2e6; --card-bg: #ffffff; --shadow-color-light: rgba(0, 0, 0, 0.04);
+        --shadow-color-heavy: rgba(0, 0, 0, 0.08); --modal-bg: rgba(255, 255, 255, 0.9); --accent-color: #339af0;
+    }
+    html[data-theme='dark'] {
+        --bg-color: #121212; --content-bg: #1e1e1e; --text-primary: #e9ecef; --text-secondary: #adb5bd;
+        --border-color: #495057; --card-bg: #2b2b2b; --shadow-color-light: rgba(0, 0, 0, 0.2);
+        --shadow-color-heavy: rgba(0, 0, 0, 0.4); --modal-bg: rgba(20, 20, 22, 0.85); --accent-color: #4dabf7;
+    }
+    body { margin: 0; background-color: var(--bg-color); font-family: var(--font-main); color: var(--text-primary); line-height: 1.6; transition: background-color 0.3s ease, color 0.3s ease; }
+    .content-wrapper { max-width: 1100px; margin: 50px auto; padding: 40px; background-color: var(--content-bg); border: 1px solid var(--border-color); border-radius: 16px; text-align: center; box-shadow: 0 4px 16px var(--shadow-color-light); transition: background-color 0.3s ease, border-color 0.3s ease; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    h1 { font-weight: 700; font-size: 42px; margin: 0; text-align: left; }
+    .accent-text { color: var(--accent-color); background: none; }
+    p.subtitle { color: var(--text-secondary); font-size: 17px; max-width: 720px; margin: 0 auto 40px auto; }
+    #theme-toggle { background: none; border: none; cursor: pointer; padding: 5px; }
+    #theme-toggle svg { width: 22px; height: 22px; fill: var(--text-secondary); transition: fill 0.2s ease; }
+    #theme-toggle:hover svg { fill: var(--text-primary); }
+    .controls-wrapper { margin-bottom: 30px; display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; }
+    #search-input { padding: 10px 16px; font-size: 16px; border-radius: 8px; width: 320px; font-family: var(--font-main); background-color: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color); transition: all 0.2s ease; }
+    #search-input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 20%, transparent); }
+    .control-button { padding: 10px 22px; font-size: 16px; cursor: pointer; border-radius: 8px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s ease; border: 1px solid var(--border-color); background-color: var(--content-bg); color: var(--text-primary); }
+    .control-button:hover { border-color: var(--text-primary); }
+    .control-button:active { transform: scale(0.97); }
+    #search-button { background-color: var(--accent-color); color: white; border-color: var(--accent-color); }
+    #search-button:hover { background-color: color-mix(in srgb, var(--accent-color) 90%, black); border-color: color-mix(in srgb, var(--accent-color) 90%, black); }
+    #up-button:disabled { cursor: not-allowed; opacity: 0.5; }
+    #reset-button { display: none; }
+    #treemap-title { font-size: 22px; font-weight: 600; color: var(--text-primary); margin-top: 50px; margin-bottom: 15px; min-height: 27px; }
+    #treemap-container svg { border-radius: 12px; width: 100%; height: auto; display: block; background-color: var(--bg-color); }
+    .node-rect { stroke: var(--content-bg); stroke-width: 0.5px; transition: filter 0.2s ease; }
+    .node-rect:hover { filter: brightness(1.15); }
+    .node-label { fill: rgba(255,255,255,0.98); font-weight: 500; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    #search-results-container { display: none; margin-top: 50px; padding-top: 40px; text-align: left; border-top: 1px solid var(--border-color); }
+    #results-count { text-align: center; font-size: 18px; color: var(--text-secondary); margin-bottom: 30px; }
+    @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    #results-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+    .result-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; background-color: var(--card-bg); transition: transform 0.2s var(--ease-out-quad), box-shadow 0.2s var(--ease-out-quad), border-color 0.2s ease; opacity: 0; animation: fade-in 0.5s var(--ease-out-quad) forwards; animation-delay: var(--animation-delay, 0s); }
+    .result-card:hover { transform: scale(1.02); border-color: var(--accent-color); box-shadow: 0 8px 24px var(--shadow-color-heavy); }
+    .card-location { font-size: 14px; color: var(--text-secondary); margin: 0 0 4px 0; }
+    .card-store-name { font-size: 18px; font-weight: 600; color: var(--text-primary); margin: 0 0 12px 0; }
+    .card-description { font-size: 15px; color: var(--text-primary); line-height: 1.7; margin: 0; white-space: pre-wrap; opacity: 0.9; }
+    .no-results { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+    .modal { display: none; position: fixed; z-index: 10001; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); animation: fadeIn 0.3s; }
+    .modal[aria-hidden="false"] { display: block; }
+    .modal-content { background-color: var(--modal-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); margin: 15% auto; padding: 35px; border: 1px solid var(--border-color); width: 90%; max-width: 550px; position: relative; border-radius: 16px; box-shadow: 0 8px 32px var(--shadow-color-heavy); }
+    .close-button { color: #aaa; position: absolute; top: 15px; right: 25px; font-size: 28px; font-weight: bold; cursor: pointer; }
+    @keyframes fadeIn { from {opacity: 0} to {opacity: 1} }
+    
