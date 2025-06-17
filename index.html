@@ -1,28 +1,298 @@
+import csv
+import json
+import os
+from pathlib import Path
 
+# --- 설정 ---
+USER_DOWNLOADS_PATH = str(Path.home() / 'Downloads')
+CSV_FILE_NAME = 'list.csv'
+# 필터링 기능이 적용된 최종 버전
+FINAL_HTML_NAME = 'final_filtered_version.html' 
+
+csv_file_path = os.path.join(USER_DOWNLOADS_PATH, CSV_FILE_NAME)
+output_html_path = os.path.join(USER_DOWNLOADS_PATH, FINAL_HTML_NAME)
+
+def create_final_html():
+    """CSV를 읽어 검색 결과에 따라 트리맵이 '필터링'되는 최종 HTML 파일을 생성합니다."""
+    print("1. 데이터 파일을 읽고 있습니다...")
+    data_list = []
+    try:
+        with open(csv_file_path, mode='r', encoding='utf-8') as infile:
+            reader = csv.reader(infile)
+            next(reader, None) # 헤더 건너뛰기
+            row_number = 1
+            for row in reader:
+                row_number += 1
+                store_name = row[1].strip() if len(row) > 1 else ''
+                province   = row[2].strip() if len(row) > 2 else ''
+                city       = row[3].strip() if len(row) > 3 else ''
+                district   = row[4].strip() if len(row) > 4 else ''
+                description= row[8].strip() if len(row) > 8 else ''
+
+                if not store_name:
+                    processed_row = { '시': '분류 불가 (상호 없음)', '군': f'원본 {row_number}행', '동': '', '상점': f'원본 {row_number}행', '정보': f"상호(B열)가 누락되었습니다.\n- 원본 행 내용: {', '.join(row)}", 'value': 1 }
+                elif not province:
+                    processed_row = { '시': '지역 정보 없음', '군': store_name, '동': '', '상점': store_name, '정보': description or '설명 없음', 'value': 1 }
+                elif not city:
+                    processed_row = { '시': province, '군': '시/군 정보 없음', '동': store_name, '상점': store_name, '정보': description or '설명 없음', 'value': 1 }
+                else:
+                    processed_row = { '시': province, '군': city, '동': district or '', '상점': store_name, '정보': description or '설명 없음', 'value': 1 }
+                data_list.append(processed_row)
+
+    except FileNotFoundError:
+        print(f"오류: '{csv_file_path}' 파일을 찾을 수 없습니다.")
+        return False
+    if not data_list:
+        print("경고: CSV 파일에서 유효한 데이터를 찾지 못했습니다.")
+        return False
+        
+    print("2. 트리맵 필터링 기능을 적용하여 최종 HTML 파일을 생성하고 있습니다...")
+    js_data_string = json.dumps(data_list, ensure_ascii=False).replace('</', '<\\/')
+    
+    title_text = "북한 상점 데이터 <span class='apple-gradient-text'>인사이트</span>"
+    subtitle_text = "'도', '시', '동' 등 지역명이나 상점 설명으로 검색하면 트리맵과 연동하여 표로 보실 수 있습니다."
+
+    # --- JavaScript 로직 ---
+    javascript_code = f"""
+    (function() {{
+        const rawData = {js_data_string};
+        const appContainer = document.querySelector('.content-wrapper');
+        const container    = appContainer.querySelector('#treemap-container');
+        
+        const searchInput = document.querySelector('#search-input');
+        const searchButton = document.querySelector('#search-button');
+        const resetButton = document.querySelector('#reset-button');
+        const searchResultsContainer = document.querySelector('#search-results-container');
+        const resultsListContainer = document.querySelector('#results-list'); 
+        const resultsCount = document.querySelector('#results-count');
+        const treemapTitle = document.querySelector('#treemap-title');
+
+        let currentRoot;
+
+        // [핵심] 이 함수는 전달된 데이터 배열(전체 또는 필터링된)로 항상 새로운 차트를 그립니다.
+        function drawChart(chartDataArray) {{
+            const width  = container.offsetWidth;
+            if (width < 10) {{ setTimeout(() => drawChart(chartDataArray), 100); return; }}
+            const height = width * 0.65;
+            d3.select(container).select("svg").remove();
+            const svg = d3.select(container).append("svg").attr("viewBox", `0 0 ${{width}} ${{height}}`).attr("preserveAspectRatio", "xMidYMid meet");
+            
+            const appleColors = ["#0A84FF", "#30D158", "#5E5CE6", "#FF9F0A", "#FF453A", "#BF5AF2", "#64D2FF", "#FFD60A"];
+            const color = d3.scaleOrdinal(appleColors);
+
+            function transformData(node, name) {{
+                if ((name === '지역 정보 없음' || name === '시/군 정보 없음') && node instanceof Map) {{
+                    const children = [];
+                    function findAndAddLeaves(currentNode) {{
+                        if (currentNode instanceof Map) {{ for (const value of currentNode.values()) findAndAddLeaves(value); }}
+                        else if (Array.isArray(currentNode)) {{ currentNode.forEach(item => {{ if(item) children.push({{ name: item.상점, value: item.value, info: item.정보 }}); }}); }}
+                    }}
+                    findAndAddLeaves(node);
+                    return {{ name: name, children: children }};
+                }}
+                if (node instanceof Map) return {{ name: name, children: Array.from(node.entries(), ([k, v]) => transformData(v, k)) }};
+                return {{ name: name, children: node.map(d => ({{ name: d.상점, value: d.value, info: d.정보 }})) }};
+            }}
+            
+            const chartData = {{ name: "전체", children: Array.from(d3.group(chartDataArray, d => d.시, d => d.군, d => d.동).entries(), ([k, v]) => transformData(v, k)) }};
+            let root = d3.hierarchy(chartData).sum(d => d.value).sort((a, b) => b.value - a.value);
+            currentRoot = root;
+
+            const treemapLayout = d3.treemap().size([width, height]).paddingInner(3);
+            const modal = document.querySelector("#infoModal"), modalTitle = document.querySelector("#modal-title"), modalDescription = document.querySelector("#modal-description"), closeButton = document.querySelector(".close-button");
+            function showModal(data) {{ modal.setAttribute('aria-hidden', 'false'); modalTitle.textContent = data.name; modalDescription.textContent = data.info; }}
+            function hideModal() {{ modal.setAttribute('aria-hidden', 'true'); }}
+            closeButton.onclick = hideModal;
+            modal.onclick = e => {{ if (e.target === modal) hideModal(); }};
+            document.addEventListener('keydown', e => {{ if (e.key === 'Escape') hideModal(); }});
+            function render(node) {{
+                currentRoot = node;
+                const layoutRoot = node.copy();
+                treemapLayout(layoutRoot);
+                const t = svg.transition().duration(750);
+                const nodes = svg.selectAll("g").data(layoutRoot.children, d => d.data.name).join(
+                    enter => {{
+                        let g = enter.append("g").attr("transform", d => `translate(${{d.x0}},${{d.y0}})`).style("opacity", 0)
+                            .on("click", (e, d) => {{
+                                e.stopPropagation();
+                                const originalNode = currentRoot.children.find(child => child.data.name === d.data.name);
+                                if (originalNode && originalNode.children) {{ 
+                                    treemapTitle.textContent = originalNode.data.name;
+                                    render(originalNode); 
+                                }} else {{ showModal(d.data); }}
+                            }});
+                        g.append("rect").attr("class", "node-rect");
+                        g.append("text").attr("class", "node-label").attr("text-anchor", "middle");
+                        return g;
+                    }},
+                    update => update,
+                    exit => exit.transition(t).style("opacity", 0).remove()
+                );
+                nodes.transition(t).attr("transform", d => `translate(${{d.x0}},${{d.y0}})`).style("opacity", 1);
+                nodes.select("rect").transition(t).attr("width", d => d.x1 - d.x0).attr("height", d => d.y1 - d.y0).attr("rx", 5).style("fill", d => d.data.name.startsWith('분류 불가') ? '#86868b' : (d.data.name.includes('정보 없음') ? '#aeaeb2' : color(d.data.name)));
+                nodes.select("text").transition(t).style("opacity", 0).end().then(() => {{
+                     nodes.select("text").each(function(d) {{
+                        const text = d3.select(this); text.html('');
+                        const cellWidth = d.x1 - d.x0; const cellHeight = d.y1 - d.y0;
+                        if (cellWidth < 20 || cellHeight < 20) {{ text.style("opacity", 0); return; }}
+                        const isGroup = !!d.children; const name = d.data.name;
+                        text.attr("y", cellHeight / 2);
+                        text.append("tspan").attr("x", cellWidth / 2).attr("dy", isGroup ? "-0.2em" : "0.3em").text(name);
+                        if (isGroup) {{ text.append("tspan").attr("x", cellWidth / 2).attr("dy", "1.2em").style("font-size", "85%").style("fill-opacity", 0.8).text(`(${{d.value}}개)`); }}
+                        try {{
+                            const padding = 15; const bbox = this.getBBox();
+                            if (bbox.width === 0 || bbox.height === 0) {{ text.style("opacity", 0); return; }}
+                            const scale = Math.min(1.2, (cellWidth - padding) / bbox.width, (cellHeight - padding) / bbox.height);
+                            let scaledFontSize = (parseFloat(text.style("font-size")) || 16) * scale;
+                            if (cellWidth > width * 0.5 || cellHeight > height * 0.5) {{ scaledFontSize = Math.min(scaledFontSize, 52); }} else {{ scaledFontSize = Math.min(scaledFontSize, 24); }}
+                            const finalFontSize = Math.max(9, scaledFontSize);
+                            text.style("font-size", finalFontSize + "px"); text.style("opacity", finalFontSize < 9.1 ? 0 : 1);
+                        }} catch (e) {{ text.style("opacity", 0); }}
+                    }});
+                }});
+                
+                const upButton = appContainer.querySelector('#up-button');
+                upButton.disabled = !node.parent;
+                upButton.onclick = () => {{
+                     if (node.parent) {{
+                        treemapTitle.textContent = node.parent.data.name === '전체' ? '전체 지역 분포' : node.parent.data.name;
+                        render(node.parent); 
+                    }}
+                }};
+            }}
+            
+            treemapTitle.textContent = chartDataArray === rawData ? '전체 지역 분포' : `'${{searchInput.value.trim()}}' 검색 결과`;
+            render(currentRoot);
+        }}
+
+        function displayResultsAsCards(data) {{
+            resultsListContainer.innerHTML = '';
+            if (data.length === 0) {{
+                resultsCount.textContent = '검색 결과가 없습니다.';
+                resultsListContainer.innerHTML = `<p class="no-results">입력한 검색어를 확인하고 다시 시도해 주세요.</p>`;
+                searchResultsContainer.style.display = 'block';
+                return;
+            }}
+
+            resultsCount.innerHTML = `총 <strong>${{data.length}}개</strong>의 상점이 검색되었습니다.`;
+            data.forEach(item => {{
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                const location = [item.시, item.군, item.동].filter(Boolean).join(' > ');
+                card.innerHTML = `<p class="card-location">${{location}}</p><h4 class="card-store-name">${{item.상점}}</h4><p class="card-description">${{item.정보.replace(/\\n/g, '<br>')}}</p>`;
+                resultsListContainer.appendChild(card);
+            }});
+            searchResultsContainer.style.display = 'block';
+        }}
+        
+        function handleSearch() {{
+            const query = searchInput.value.trim().toLowerCase();
+            if (!query) {{
+                resetView(); 
+                return;
+            }}
+
+            const filteredData = rawData.filter(d => {{
+                return (d.시 && d.시.toLowerCase().includes(query)) ||
+                       (d.군 && d.군.toLowerCase().includes(query)) ||
+                       (d.동 && d.동.toLowerCase().includes(query)) ||
+                       (d.상점 && d.상점.toLowerCase().includes(query)) ||
+                       (d.정보 && d.정보.toLowerCase().includes(query));
+            }});
+            
+            // [핵심] 필터링된 데이터로 차트 그리기
+            drawChart(filteredData);
+            displayResultsAsCards(filteredData);
+            
+            resetButton.style.display = 'inline-flex';
+        }}
+        
+        function resetView() {{
+            searchInput.value = '';
+            searchResultsContainer.style.display = 'none';
+            resetButton.style.display = 'none';
+            // [핵심] 전체 데이터로 차트 그리기
+            drawChart(rawData);
+        }}
+
+        searchButton.addEventListener('click', handleSearch);
+        searchInput.addEventListener('keydown', (e) => {{ if (e.key === 'Enter') handleSearch(); }});
+        resetButton.addEventListener('click', resetView);
+
+        // 최초 실행
+        drawChart(rawData);
+        
+        let resizeTimer;
+        window.addEventListener('resize', () => {{ 
+            clearTimeout(resizeTimer); 
+            const query = searchInput.value.trim().toLowerCase();
+            const currentData = searchResultsContainer.style.display === 'block' && query
+                ? rawData.filter(d => {{
+                    return (d.시 && d.시.toLowerCase().includes(query)) || (d.군 && d.군.toLowerCase().includes(query)) || (d.동 && d.동.toLowerCase().includes(query)) || (d.상점 && d.상점.toLowerCase().includes(query)) || (d.정보 && d.정보.toLowerCase().includes(query));
+                  }})
+                : rawData;
+            resizeTimer = setTimeout(() => drawChart(currentData), 200); 
+        }});
+    }})();
+    """
+
+    # --- HTML & CSS 코드 ---
+    html_template = f"""
 <!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Professional Data Visualization</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Filtered Data Visualization</title>
+    <style>
+        :root {{
+            --apple-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            --background-color: #f5f5f7;
+            --content-background-color: #ffffff;
+            --text-color-primary: #1d1d1f;
+            --text-color-secondary: #6e6e73;
+            --link-color: #007aff;
+            --border-color: #d2d2d7;
+            --card-border-color: #e5e5e5;
+        }}
+        body {{ margin: 0; background-color: var(--background-color); font-family: var(--apple-font); }}
+        .content-wrapper {{ max-width: 980px; margin: 40px auto; padding: 40px; background-color: var(--content-background-color); border-radius: 18px; text-align: center; }}
+        h1 {{ color: var(--text-color-primary); font-weight: 600; font-size: 48px; margin-bottom: 16px; letter-spacing: -0.005em; }}
+        .apple-gradient-text {{ background: linear-gradient(125deg, #FF2D55, #FF9F0A, #30D158, #0A84FF, #5E5CE6); -webkit-background-clip: text; background-clip: text; color: transparent; }}
+        p.subtitle {{ color: var(--text-color-secondary); font-size: 18px; max-width: 680px; margin: 0 auto 30px auto; line-height: 1.5; }}
+        .controls-wrapper {{ margin-bottom: 25px; display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; }}
+        #search-input {{ padding: 10px 16px; font-size: 16px; border: 1px solid var(--border-color); border-radius: 20px; min-width: 280px; font-family: var(--apple-font); }}
+        #search-input:focus {{ outline: none; border-color: var(--link-color); box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3); }}
+        .control-button {{ padding: 10px 22px; font-size: 16px; cursor: pointer; border-radius: 20px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.1s ease-out; border: 1px solid transparent; }}
+        .control-button:active {{ transform: scale(0.96); }}
+        #search-button {{ background-color: var(--link-color); color: white; border-color: var(--link-color); }}
+        #up-button, #reset-button {{ background-color: #f5f5f7; color: var(--link-color); border-color: var(--border-color); }}
+        #up-button:disabled {{ cursor: not-allowed; opacity: 0.5; }}
+        #reset-button {{ display: none; }}
+        #treemap-title {{ font-size: 24px; font-weight: 600; color: var(--text-color-primary); margin-top: 40px; margin-bottom: 15px; min-height: 29px; }}
+        #treemap-container svg {{ border-radius: 18px; width: 100%; height: auto; display: block; }}
+        .node-rect {{ stroke-width: 0px; }}
+        .node-label {{ fill: rgba(255,255,255,0.98); font-weight: 500; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.25); }}
+        #search-results-container {{ display: none; margin-top: 40px; padding-top: 30px; text-align: left; border-top: 1px solid var(--card-border-color); }}
+        #results-count {{ text-align: center; font-size: 18px; color: var(--text-color-secondary); margin-bottom: 25px; }}
+        #results-list {{ display: grid; gap: 20px; }}
+        .result-card {{ border: 1px solid var(--card-border-color); border-radius: 12px; padding: 20px; background-color: #fafafa; transition: box-shadow 0.2s ease-in-out; }}
+        .result-card:hover {{ box-shadow: 0 4px 12px rgba(0,0,0,0.08); }}
+        .card-location {{ font-size: 14px; color: var(--text-color-secondary); margin: 0 0 4px 0; }}
+        .card-store-name {{ font-size: 18px; font-weight: 600; color: var(--text-color-primary); margin: 0 0 12px 0; }}
+        .card-description {{ font-size: 15px; color: var(--text-color-secondary); line-height: 1.6; margin: 0; white-space: pre-wrap; }}
+        .no-results {{ text-align: center; padding: 40px 20px; color: var(--text-color-secondary); }}
+        .modal {{ display: none; position: fixed; z-index: 10001; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: fadeIn 0.4s; }}
+        .modal[aria-hidden="false"] {{ display: block; }}
+        .modal-content {{ background-color: rgba(255,255,255,0.9); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); margin: 15% auto; padding: 30px; border: none; width: 90%; max-width: 550px; position: relative; border-radius: 18px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }}
+        .close-button {{ color: #888; position: absolute; top: 15px; right: 25px; font-size: 28px; font-weight: bold; cursor: pointer; }}
+        @keyframes fadeIn {{ from {{opacity: 0}} to {{opacity: 1}} }}
+    </style>
 </head>
 <body>
-    <script>
-        (function() {
-            const theme = localStorage.getItem('theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-            document.documentElement.setAttribute('data-theme', theme);
-        })();
-    </script>
     <main class="content-wrapper">
-        <header>
-            <h1>북한 상점 데이터 <span class='accent-text'>인사이트</span></h1>
-            <button id="theme-toggle" title="테마 전환">
-                <svg class="sun" style="display:none;" viewBox="0 0 24 24"><path d="M12 2a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm0 16a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1zM5.636 4.222a1 1 0 0 1 1.414 0l1.414 1.414a1 1 0 0 1-1.414 1.414L5.636 5.636a1 1 0 0 1 0-1.414zm12.728 12.728a1 1 0 0 1 1.414 0l1.414 1.414a1 1 0 0 1-1.414 1.414l-1.414-1.414a1 1 0 0 1 0-1.414zM4.222 18.364a1 1 0 0 1 0 1.414l-1.414 1.414a1 1 0 0 1-1.414-1.414l1.414-1.414a1 1 0 0 1 1.414 0zm12.728-12.728a1 1 0 0 1 0 1.414l-1.414 1.414a1 1 0 0 1-1.414-1.414l1.414-1.414a1 1 0 0 1 1.414 0zM21 12a1 1 0 0 1-1 1h-2a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1zM5 12a1 1 0 0 1-1 1H2a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1zm7-5a5 5 0 1 1 0 10 5 5 0 0 1 0-10z"/></svg>
-                <svg class="moon" viewBox="0 0 24 24"><path d="M11.272 2.006a1 1 0 0 1 .536.488A9.95 9.95 0 0 0 13.951 4c1.49 0 2.892-.32 4.143-.895a1 1 0 0 1 1.21 .843 10.034 10.034 0 0 1-.77 6.046C17.26 13.56 14.716 15 12 15a9.986 9.986 0 0 1-7.994-14.82A1 1 0 0 1 4.72 1.24a10.05 10.05 0 0 1 6.551.766z"/></svg>
-            </button>
-        </header>
-        <p class="subtitle">'도', '시', '동' 등 지역명이나 상점 설명으로 검색하면 트리맵과 연동하여 지능적으로 탐색할 수 있습니다.</p>
+        <h1>{title_text}</h1>
+        <p class="subtitle">{subtitle_text}</p>
         <div class="controls-wrapper">
             <input type="search" id="search-input" placeholder="지역명, 상점 정보 등으로 검색">
             <button id="search-button" class="control-button">검색</button>
@@ -38,9 +308,23 @@
             <div id="results-list"></div>
         </section>
     </main>
-    <div id="infoModal" class="modal" aria-hidden="true"><div class="modal-content"><span class="close-button">&times;</span><h2 id="modal-title" style="color:var(--text-primary);"></h2><p id="modal-description" style="white-space: pre-wrap; color:var(--text-primary); opacity: 0.9;"></p></div></div>
-    
-    <script src="https://d3js.org/d3.v7.min.js" integrity="sha512-9b9r9J_Chand1l_GSHh+cQ2Sj1eG66MvTDAK+S2ADheRrmI3IAroJ1Q1/1T23T//352934R/M9XhTofxK3/cQ==" crossorigin="anonymous"></script>
-    <script src="script.js" defer></script>
+    <div id="infoModal" class="modal" aria-hidden="true"><div class="modal-content"><span class="close-button">&times;</span><h2 id="modal-title" style="color:var(--text-color-primary);"></h2><p id="modal-description" style="white-space: pre-wrap; color: var(--text-color-secondary);"></p></div></div>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script>{javascript_code}</script>
 </body>
 </html>
+"""
+
+    with open(output_html_path, 'w', encoding='utf-8') as outfile:
+        outfile.write(html_template)
+    return True
+
+if __name__ == "__main__":
+    if create_final_html():
+        print("\n--- 🚀 작업 완료! ---")
+        print("트리맵 필터링 기능이 적용된 HTML 파일이 생성되었습니다.")
+        print(f"최종 파일: '{output_html_path}'")
+        print("\n[사용 방법]")
+        print("1. 생성된 HTML 파일을 브라우저로 열어주세요.")
+        print("2. '은행' 등의 키워드로 검색하면, 카드 목록과 상단 트리맵이 함께 필터링되어 표시됩니다.")
+        print("3. '전체 보기' 버튼이나 빈 검색어로 검색하면 초기 전체 데이터로 돌아옵니다.")
