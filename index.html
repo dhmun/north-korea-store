@@ -87,7 +87,6 @@
 
         let currentRoot;
 
-        // [핵심] 이 함수는 전달된 데이터 배열(전체 또는 필터링된)로 항상 새로운 차트를 그립니다.
         function drawChart(chartDataArray) {
             const width  = container.offsetWidth;
             if (width < 10) { setTimeout(() => drawChart(chartDataArray), 100); return; }
@@ -99,6 +98,7 @@
             const color = d3.scaleOrdinal(appleColors);
 
             function transformData(node, name) {
+                if (!name) return null;
                 if ((name === '지역 정보 없음' || name === '시/군 정보 없음') && node instanceof Map) {
                     const children = [];
                     function findAndAddLeaves(currentNode) {
@@ -108,11 +108,14 @@
                     findAndAddLeaves(node);
                     return { name: name, children: children };
                 }
-                if (node instanceof Map) return { name: name, children: Array.from(node.entries(), ([k, v]) => transformData(v, k)) };
+                if (node instanceof Map) {
+                    const children = Array.from(node.entries(), ([k, v]) => transformData(v, k)).filter(Boolean);
+                    return children.length > 0 ? { name: name, children: children } : null;
+                }
                 return { name: name, children: node.map(d => ({ name: d.상점, value: d.value, info: d.정보 })) };
             }
             
-            const chartData = { name: "전체", children: Array.from(d3.group(chartDataArray, d => d.시, d => d.군, d => d.동).entries(), ([k, v]) => transformData(v, k)) };
+            const chartData = { name: "전체", children: Array.from(d3.group(chartDataArray, d => d.시, d => d.군, d => d.동).entries(), ([k, v]) => transformData(v, k)).filter(Boolean) };
             let root = d3.hierarchy(chartData).sum(d => d.value).sort((a, b) => b.value - a.value);
             currentRoot = root;
 
@@ -128,7 +131,7 @@
                 const layoutRoot = node.copy();
                 treemapLayout(layoutRoot);
                 const t = svg.transition().duration(750);
-                const nodes = svg.selectAll("g").data(layoutRoot.children, d => d.data.name).join(
+                const nodes = svg.selectAll("g").data(layoutRoot.children || [], d => d.data.name).join(
                     enter => {
                         let g = enter.append("g").attr("transform", d => `translate(${d.x0},${d.y0})`).style("opacity", 0)
                             .on("click", (e, d) => {
@@ -191,7 +194,6 @@
                 searchResultsContainer.style.display = 'block';
                 return;
             }
-
             resultsCount.innerHTML = `총 <strong>${data.length}개</strong>의 상점이 검색되었습니다.`;
             data.forEach(item => {
                 const card = document.createElement('div');
@@ -209,7 +211,6 @@
                 resetView(); 
                 return;
             }
-
             const filteredData = rawData.filter(d => {
                 return (d.시 && d.시.toLowerCase().includes(query)) ||
                        (d.군 && d.군.toLowerCase().includes(query)) ||
@@ -218,10 +219,8 @@
                        (d.정보 && d.정보.toLowerCase().includes(query));
             });
             
-            // [핵심] 필터링된 데이터로 차트 그리기
             drawChart(filteredData);
             displayResultsAsCards(filteredData);
-            
             resetButton.style.display = 'inline-flex';
         }
         
@@ -229,27 +228,28 @@
             searchInput.value = '';
             searchResultsContainer.style.display = 'none';
             resetButton.style.display = 'none';
-            // [핵심] 전체 데이터로 차트 그리기
             drawChart(rawData);
         }
 
-        searchButton.addEventListener('click', handleSearch);
-        searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSearch(); });
-        resetButton.addEventListener('click', resetView);
+        // DOMContentLoaded로 감싸서 HTML 로딩 후 스크립트 실행 보장
+        document.addEventListener("DOMContentLoaded", function() {
+            searchButton.addEventListener('click', handleSearch);
+            searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSearch(); });
+            resetButton.addEventListener('click', resetView);
 
-        // 최초 실행
-        drawChart(rawData);
+            drawChart(rawData);
         
-        let resizeTimer;
-        window.addEventListener('resize', () => { 
-            clearTimeout(resizeTimer); 
-            const query = searchInput.value.trim().toLowerCase();
-            const currentData = searchResultsContainer.style.display === 'block' && query
-                ? rawData.filter(d => {
-                    return (d.시 && d.시.toLowerCase().includes(query)) || (d.군 && d.군.toLowerCase().includes(query)) || (d.동 && d.동.toLowerCase().includes(query)) || (d.상점 && d.상점.toLowerCase().includes(query)) || (d.정보 && d.정보.toLowerCase().includes(query));
-                  })
-                : rawData;
-            resizeTimer = setTimeout(() => drawChart(currentData), 200); 
+            let resizeTimer;
+            window.addEventListener('resize', () => { 
+                clearTimeout(resizeTimer); 
+                const query = searchInput.value.trim().toLowerCase();
+                const currentData = searchResultsContainer.style.display === 'block' && query
+                    ? rawData.filter(d => {
+                        return (d.시 && d.시.toLowerCase().includes(query)) || (d.군 && d.군.toLowerCase().includes(query)) || (d.동 && d.동.toLowerCase().includes(query)) || (d.상점 && d.상점.toLowerCase().includes(query)) || (d.정보 && d.정보.toLowerCase().includes(query));
+                      })
+                    : rawData;
+                resizeTimer = setTimeout(() => drawChart(currentData), 200); 
+            });
         });
     })();
     </script>
